@@ -246,7 +246,7 @@ const updateSubmissionStatus = async (req, res, next) => {
   const { status, validFrom, validTo } = req.body; // 'approved' | 'rejected'
   const submissionId = req.params.id;
 
-  if (!['approved', 'rejected'].includes(status)) {
+  if (!['approved', 'rejected', 'archived'].includes(status)) {
     return res.status(400).json({ success: false, message: 'Invalid status' });
   }
 
@@ -264,10 +264,12 @@ const updateSubmissionStatus = async (req, res, next) => {
     const toDate = validTo ? new Date(validTo) : new Date();
 
     submission.students = submission.students.map(student => {
-      student.status = status;
-      if (status === 'approved') {
-        student.validFrom = fromDate;
-        student.validTo = toDate;
+      if (status !== 'archived') {
+        student.status = status;
+        if (status === 'approved') {
+          student.validFrom = fromDate;
+          student.validTo = toDate;
+        }
       }
       return student;
     });
@@ -375,11 +377,62 @@ const bulkActionSubmissions = async (req, res, next) => {
     return res.status(400).json({ success: false, message: 'No student IDs provided' });
   }
 
-  if (!['approve', 'reject', 'mark_printed'].includes(action)) {
+  if (!['approve', 'reject', 'mark_printed', 'archive', 'delete'].includes(action)) {
     return res.status(400).json({ success: false, message: 'Invalid bulk action' });
   }
 
   try {
+    if (action === 'delete') {
+      const submissions = await Submission.find({ 'students._id': { $in: studentIds } });
+      const submissionIds = submissions.map(s => s._id);
+      
+      await Submission.deleteMany({ _id: { $in: submissionIds } });
+
+      // Log to Audit Log
+      await AuditLog.create({
+        userEmail: req.user.email,
+        action: 'bulk_delete',
+        details: {
+          count: studentIds.length,
+          studentIds,
+          submissionIds
+        },
+        ipAddress: req.ip || req.connection.remoteAddress
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: `Bulk deleted ${submissions.length} submission groups successfully`
+      });
+    }
+
+    if (action === 'archive') {
+      const submissions = await Submission.find({ 'students._id': { $in: studentIds } });
+      
+      const savePromises = submissions.map(submission => {
+        submission.status = 'archived';
+        return submission.save();
+      });
+
+      await Promise.all(savePromises);
+
+      // Log to Audit Log
+      await AuditLog.create({
+        userEmail: req.user.email,
+        action: 'bulk_archive',
+        details: {
+          count: studentIds.length,
+          studentIds,
+          submissionIds: submissions.map(s => s._id)
+        },
+        ipAddress: req.ip || req.connection.remoteAddress
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: `Bulk archived ${submissions.length} submission groups successfully`
+      });
+    }
     const fromDate = validFrom ? new Date(validFrom) : new Date();
     const toDate = validTo ? new Date(validTo) : new Date();
     const printedAt = new Date();
@@ -494,6 +547,42 @@ const updateStudentPhoto = async (req, res, next) => {
   }
 };
 
+/**
+ * @desc    Delete a submission
+ * @route   DELETE /api/submissions/:id
+ * @access  Private (Admin)
+ */
+const deleteSubmission = async (req, res, next) => {
+  try {
+    const submission = await Submission.findById(req.params.id);
+    if (!submission) {
+      return res.status(404).json({ success: false, message: 'Submission not found' });
+    }
+
+    await Submission.findByIdAndDelete(req.params.id);
+
+    // Log to Audit Log
+    await AuditLog.create({
+      userEmail: req.user.email,
+      action: 'delete_submission',
+      details: {
+        requestId: submission.requestId,
+        submissionId: submission._id,
+        groupName: submission.groupName,
+        studentCount: submission.students.length
+      },
+      ipAddress: req.ip || req.connection.remoteAddress
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Submission deleted successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   uploadPhoto,
   registerSubmission,
@@ -501,5 +590,6 @@ module.exports = {
   updateSubmissionStatus,
   updateStudentStatus,
   bulkActionSubmissions,
-  updateStudentPhoto
+  updateStudentPhoto,
+  deleteSubmission
 };

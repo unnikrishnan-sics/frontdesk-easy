@@ -9,7 +9,8 @@ const {
   updateSubmissionStatus,
   updateStudentStatus,
   bulkActionSubmissions,
-  updateStudentPhoto
+  updateStudentPhoto,
+  deleteSubmission
 } = require('../controllers/submissionController');
 
 // Multer memory storage configuration
@@ -26,6 +27,7 @@ router.post('/register', registerSubmission);
 router.get('/', protect, getSubmissions);
 router.post('/bulk-action', protect, bulkActionSubmissions);
 router.put('/:id/status', protect, updateSubmissionStatus);
+router.delete('/:id', protect, deleteSubmission);
 router.put('/:id/students/:studentId/status', protect, updateStudentStatus);
 router.put('/:id/students/:studentId/photo', protect, updateStudentPhoto);
 

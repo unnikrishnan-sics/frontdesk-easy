@@ -47,7 +47,9 @@ import {
   KeyboardArrowUp as CollapseIcon,
   Refresh as RefreshIcon,
   DateRange as DateIcon,
-  Search as SearchIcon
+  Search as SearchIcon,
+  Delete as DeleteIcon,
+  Archive as ArchiveIcon
 } from '@mui/icons-material';
 
 import Layout from '../components/Layout';
@@ -274,6 +276,43 @@ const Dashboard = () => {
     }
   };
 
+  const handleArchiveSubmission = async (id) => {
+    if (window.confirm('Are you sure you want to archive this submission? It will be hidden from the active list.')) {
+      try {
+        await api.put(`/submissions/${id}/status`, { status: 'archived' });
+        queryClient.invalidateQueries(['submissions']);
+        queryClient.invalidateQueries(['stats']);
+      } catch (err) {
+        console.error(err);
+        alert(err.response?.data?.message || 'Failed to archive submission.');
+      }
+    }
+  };
+
+  const handleDeleteSubmission = async (id) => {
+    if (window.confirm('Are you sure you want to PERMANENTLY delete this submission? This action cannot be undone.')) {
+      try {
+        await api.delete(`/submissions/${id}`);
+        queryClient.invalidateQueries(['submissions']);
+        queryClient.invalidateQueries(['stats']);
+      } catch (err) {
+        console.error(err);
+        alert(err.response?.data?.message || 'Failed to delete submission.');
+      }
+    }
+  };
+
+  const handleRestoreSubmission = async (id) => {
+    try {
+      await api.put(`/submissions/${id}/status`, { status: 'pending' });
+      queryClient.invalidateQueries(['submissions']);
+      queryClient.invalidateQueries(['stats']);
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Failed to restore submission.');
+    }
+  };
+
   // --- APPROVE: Immediate (no dialog, uses today as placeholder date) ---
   const handleApproveGroup = (submission) => {
     const today = new Date();
@@ -422,6 +461,24 @@ const Dashboard = () => {
       bulkActionMutation.mutate({
         studentIds: selectedStudentIds,
         action: 'reject'
+      });
+    }
+  };
+
+  const handleBulkArchive = () => {
+    if (window.confirm(`Are you sure you want to archive submissions for the ${selectedStudentIds.length} selected students?`)) {
+      bulkActionMutation.mutate({
+        studentIds: selectedStudentIds,
+        action: 'archive'
+      });
+    }
+  };
+
+  const handleBulkDelete = () => {
+    if (window.confirm(`Are you sure you want to PERMANENTLY delete submissions for the ${selectedStudentIds.length} selected students? This action cannot be undone.`)) {
+      bulkActionMutation.mutate({
+        studentIds: selectedStudentIds,
+        action: 'delete'
       });
     }
   };
@@ -579,6 +636,7 @@ const Dashboard = () => {
                   <MenuItem value="approved">Approved</MenuItem>
                   <MenuItem value="rejected">Rejected</MenuItem>
                   <MenuItem value="printed">Printed</MenuItem>
+                  <MenuItem value="archived">Archived</MenuItem>
                 </Select>
               </FormControl>
             </Grid>
@@ -659,7 +717,7 @@ const Dashboard = () => {
             <Typography variant="body2" color="primary" sx={{ fontWeight: 600 }}>
               {selectedStudentIds.length} trainee(s) selected
             </Typography>
-            <Box sx={{ display: 'flex', gap: 1.5 }}>
+            <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
               <Button
                 variant="contained"
                 color="success"
@@ -686,6 +744,26 @@ const Dashboard = () => {
                 onClick={openBulkPrintDialog}
               >
                 Print Passes
+              </Button>
+              <Button
+                variant="contained"
+                color="warning"
+                size="small"
+                startIcon={<ArchiveIcon />}
+                onClick={handleBulkArchive}
+                sx={{ bgcolor: '#F59E0B', '&:hover': { bgcolor: '#D97706' } }}
+              >
+                Archive Selected
+              </Button>
+              <Button
+                variant="contained"
+                color="error"
+                size="small"
+                startIcon={<DeleteIcon />}
+                onClick={handleBulkDelete}
+                sx={{ bgcolor: '#EF4444', '&:hover': { bgcolor: '#DC2626' } }}
+              >
+                Delete Selected
               </Button>
               <Button
                 variant="text"
@@ -750,6 +828,7 @@ const Dashboard = () => {
                 if (submission.status === 'approved') statusColor = 'success';
                 if (submission.status === 'rejected') statusColor = 'error';
                 if (submission.status === 'partially_approved') statusColor = 'info';
+                if (submission.status === 'archived') statusColor = 'default';
 
                 return (
                   <React.Fragment key={submission._id}>
@@ -856,6 +935,43 @@ const Dashboard = () => {
                               </IconButton>
                             </Tooltip>
                           )}
+
+                          {/* Restore if Archived */}
+                          {submission.status === 'archived' && (
+                            <Tooltip title="Restore Request to Pending">
+                              <IconButton
+                                size="small"
+                                onClick={() => handleRestoreSubmission(submission._id)}
+                                sx={{ color: '#10B981', bgcolor: '#ECFDF5', '&:hover': { bgcolor: '#D1FAE5' } }}
+                              >
+                                <ApproveIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          )}
+
+                          {/* Archive option if not already archived */}
+                          {submission.status !== 'archived' && (
+                            <Tooltip title="Archive Request">
+                              <IconButton
+                                size="small"
+                                onClick={() => handleArchiveSubmission(submission._id)}
+                                sx={{ color: '#F59E0B', bgcolor: '#FEF3C7', '&:hover': { bgcolor: '#FDE68A' } }}
+                              >
+                                <ArchiveIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          )}
+
+                          {/* Delete option */}
+                          <Tooltip title="Delete Request Permanently">
+                            <IconButton
+                              size="small"
+                              onClick={() => handleDeleteSubmission(submission._id)}
+                              sx={{ color: '#EF4444', bgcolor: '#FEF2F2', '&:hover': { bgcolor: '#FEE2E2' } }}
+                            >
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
                         </Stack>
                       </TableCell>
                     </TableRow>
